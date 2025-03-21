@@ -1,0 +1,273 @@
+---
+title: "Characterizing Automobiles"
+author: "Brandon Rodriguez-Hernandez"
+date: "03/17/2025"
+
+format: 
+  html:  # You will quite likely want to change all but the last one, to taste
+    theme:
+        light: flatly
+        dark: darkly
+    mainfont: monospace
+    highlight-style: github
+    title-block-banner: true
+    embed-resources: true
+---
+
+# Setup
+
+-   Setup
+
+```{r libs}
+sh <- suppressPackageStartupMessages
+sh(library(tidyverse))
+sh(library(caret))
+sh(library(fastDummies))
+sh(library(class))
+sh(library(pROC)) 
+sh(library(ISLR)) # for the "Auto" dataframe
+```
+
+# Dataframe
+
+-   We use the `Auto` dataframe.
+
+```{r df}
+head(Auto)
+```
+
+-   It has the following variable names, which describe various attributes of automobiles.
+
+```{r df2}
+names(Auto)
+```
+
+# Multiple Regression
+
+-   Run a linear regression model with `mpg` as the dependent variable and `horsepower` and `year` as features (variables).
+-   Compute and comment on the RMSE.
+
+```{r regression}
+model <- lm(mpg ~ horsepower + year, data = Auto)
+
+predictions <- predict(model, Auto)
+
+residuals <- Auto$mpg - predictions
+
+rmse <- sqrt(mean(residuals^2))
+
+print(paste("RMSE:", rmse))
+
+summary(model)
+
+range_mpg <- range(Auto$mpg)
+print(paste("Range of mpg:", range_mpg[1], "-", range_mpg[2]))
+
+
+```
+
+> [TODO]{style="color:red;font-weight:bold"}: *The RMSE is 4.372, which is the average magnitude of error, and given the range of mpg, it is not too bad given that it is about 10% of the range. *
+
+# Feature Engineering
+
+-   Create 10 features based on the `name` column.
+-   Remove all rows with a missing value.
+-   Ensure only `mpg` and the engineered features remain.
+-   Compute and comment on the RMSE.
+
+```{r features}
+df <- Auto %>%
+  mutate(chevrolet = str_detect(name, "chevrolet")) %>%
+  mutate(ford = str_detect(name, "ford")) %>%
+  mutate(buick = str_detect(name, "buick")) %>%
+  mutate(audi = str_detect(name, "audi")) %>%
+  mutate(dodge = str_detect(name, "dodge")) %>%
+  mutate(bmw = str_detect(name, "bmw")) %>%
+  mutate(toyota = str_detect(name, "toyota")) %>%
+  mutate(honda = str_detect(name, "honda")) %>%
+  mutate(volkswagen = str_detect(name, "volkswagen")) %>%
+  mutate(mazda = str_detect(name, "mazda")) %>%
+  mutate(fiat = str_detect(name, "fiat")) %>%
+  select(-name, -cylinders, -displacement, -horsepower, -weight, -acceleration, -origin, -year)
+
+df <- na.omit(df)
+
+df <- df %>%
+  mutate(car_type = case_when(
+    chevrolet == TRUE ~ "chevrolet",
+    honda == TRUE ~ "honda",
+    TRUE ~ "Neither"
+  )) %>%
+  mutate(car_type = as.factor(car_type)) %>%
+  select(-chevrolet, -honda)
+
+
+```
+
+> [TODO]{style="color:red;font-weight:bold"}: *I was not sure what exactly to extract from a column that gives the make and model. Even if I did interactions with that column and numerical ones, it would either be 0, or non-zero give if it is the make or not.*
+
+# Classification
+
+-   Use either of $K$-NN or Naive Bayes to predict whether an automobile is a `chevrolet` or a `honda`.
+-   Explain your choice of technique.
+-   Report on your Kappa value.
+
+```{r classification}
+
+auto_index <- createDataPartition(df$car_type, p = 0.80, list = FALSE)
+train <- df[auto_index, ]
+test <- df[-auto_index, ]
+
+# Train the model
+ctrl <- trainControl(method = "cv", number = 10)
+model <- train(car_type ~ .,
+               data = train,
+               method = "naive_bayes",
+               metric = "Kappa",
+               trControl = ctrl)
+
+print(model)
+
+# Evaluate the model on the test set
+predictions <- predict(model, test)
+confusionMatrix(predictions, test$car_type)
+
+
+```
+
+> [TODO]{style="color:red;font-weight:bold"}: *The given Kappa tells me that the model is as good as random guessing. I think this is due to the fact that we are given the column 'name' which has the make and model, and are trying to determine the make of the car. It seems a little counterintuitive to me, so in the next problems I am going to try and use other features, and instead create a make column, which will set me up to create weights for the different makes.*
+
+# Binary Classification
+
+-   Predict whether a car is a `honda`.
+-   Use model weights.
+-   Display and comment on an ROC curve.
+
+```{r binary classification}
+f.weights <- function(df, colname) {
+  values <- df[[colname]]
+  count_table <- table(values)
+  max_value <- max(count_table)
+  max_col <- names(count_table[count_table == max_value])[1]
+
+  num_other_rows <- length(names(count_table)) - 1
+  weights <- numeric(num_other_rows + 1)
+  province <- character(num_other_rows + 1)
+
+  index <- 1
+  for (row_name in names(count_table)) {
+    if (row_name != max_col) {
+      count <- as.numeric(count_table[row_name])
+      weights[index] <- max_value / count
+      province[index] <- row_name
+      index <- index + 1
+    }
+  }
+
+  weights[index] <- 1
+  province[index] <- max_col
+
+  weights_df <- data.frame(province, weight = weights)
+  names(weights_df)[1] <- colname
+
+
+  df <- df %>%
+    left_join(weights_df, by = colname)
+
+
+  if ("weight" %in% names(df)) {
+    df <- df %>%
+      rename(weights = weight)
+  } else {
+    print("Warning: 'weight' column not found after left_join.")
+  }
+
+  return(df)
+}
+
+
+
+
+ds <- Auto %>%
+  mutate(make = word(name, 1)) %>%
+  select(-name)
+
+ds$make[ds$make == "chevroelt"] <- "chevrolet"
+ds$make[ds$make == "chevy"] <- "chevrolet"
+ds$make[ds$make == "mercedes-benz"] <- "mercedes"
+ds$make[ds$make == "vw"] <- "volkswagen"
+ds$make[ds$make == "toyouta"] <- "toyota"
+
+ds$make <- as.factor(ds$make)
+
+ds <- na.omit(ds)
+
+ds_weighted <- f.weights(ds, "make")
+
+
+
+
+ds_honda <- ds %>%
+  mutate(honda = as.factor(ifelse(make == "honda", "Honda", "NotHonda"))) %>%
+  select(-make)
+
+# Create trainControl object
+control <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Partition the data with stratified sampling
+honda_index <- createDataPartition(ds_honda$honda, p = 0.80, list = FALSE, times = 1, groups = min(5, length(unique(ds_honda$honda))))
+train <- ds_honda[honda_index, ]
+test <- ds_honda[-honda_index, ]
+
+# Train the logistic regression model
+fit <- train(honda ~ .,
+             data = train,
+             trControl = control,
+             method = "glm",
+             family = "binomial",
+             metric = "ROC")
+
+print(fit)
+
+predictions_prob <- predict(fit, test, type = "prob")
+roc_curve <- roc(test$honda, predictions_prob$Honda)
+plot(roc_curve, main = "ROC Curve")
+
+
+
+```
+
+> [TODO]{style="color:red;font-weight:bold"}: *The ROC curve seems to be really good, because it is best when it is hugging the upper left corner, which means that it is a good predictor of hond and not a honda.*
+
+# Ethics
+
+-   Based on your analysis, comment on the [Clean Air Act of 1970 and Ammendments of 1977](https://www.epa.gov/clean-air-act-overview/evolution-clean-air-act)
+-   Discuss the civic reposibilities of data scientists for:
+    -   Big Data and Human-Centered Computing
+    -   Democratic Institutions
+    -   Climate Change
+-   Provide at least one statistical measure for each, such as a RMSE, Kappa value, or ROC curve.
+
+> [TODO]{style="color:red;font-weight:bold"}: Big Data and Human-Centered Computing
+
+```{r big data}
+ggplot(data = Auto,aes(x=year,y=mpg))+
+  geom_smooth(color='blue')+
+  theme_bw()
+```
+[TODO]{style="color:red;font-weight:bold"}: *It is important to always keep in mind how important it is to focus on designing technology that is benefits society, or at least keep that in mind. Like how people did research on the affects of emmisions and global warming, which led to legislation being put in place to help mitigate it. That continues to be a great example of putting computing to good use for the benefit of humans, and the world we live in. In the graph above you can see how much better cars' mpg became especially during this time when legislation was coming out for emissions.*
+
+> [TODO]{style="color:red;font-weight:bold"}: Democratic Institutions
+
+```{r democracy}
+# Your code here
+```
+[TODO]{style="color:red;font-weight:bold"}: *I think a big part of data scientists is being able to present the least biased informatian/stories that we find in data, so that people can act fairly on the information. It is possible for people to skew data for the benefit of corps. or even as a scare tactic, so we need to understand the responsibility we have to present it with minimal bias, or at least acknowledge where it could be found if there was any.*
+
+> [TODO]{style="color:red;font-weight:bold"}: Climate Change
+
+```{r climate}
+# Your code here
+```
+[TODO]{style="color:red;font-weight:bold"}: *As for as climate change goes and the responsibilities of data scientist, it is just important that we continue to do our due dilagence, continuing to show how serious of an issue it is and what is affecting it directly. We can show how much of an impact different legislation has on emmissions and ozone layer health. For these last two I was not sure what else to show besides the graph, which showed a positive trend in car manufacturers, although the graph does not show the likely drop off in the following years, because we do not have that kind of improvement to this day.*
+

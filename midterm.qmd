@@ -234,6 +234,7 @@ roc_curve <- roc(test$honda, predictions_prob$Honda)
 plot(roc_curve, main = "ROC Curve")
 
 
+auc(roc_curve)
 
 ```
 
@@ -253,6 +254,12 @@ plot(roc_curve, main = "ROC Curve")
 ```{r big data}
 ggplot(data = Auto,aes(x=year,y=mpg))+
   geom_smooth(color='blue')+
+  labs(title='Change in MPG between 1970 and 1982')+
+    geom_vline(xintercept = 70, linetype = "dashed", color = "black") +
+    geom_vline(xintercept = 77, linetype = "dashed", color = "black") +
+
+    annotate("text", x = 70, y = 23, label = "Clean Air Act of 1970", angle = 90, vjust = -0.5, hjust = 0, size = 4, color = "black")+
+  annotate("text", x = 77, y = 24, label = "Ammendments of 1977", angle = 90, vjust = -0.5, hjust = 0, size = 4, color = "black")+
   theme_bw()
 ```
 [TODO]{style="color:red;font-weight:bold"}: *It is important to always keep in mind how important it is to focus on designing technology that is benefits society, or at least keep that in mind. Like how people did research on the affects of emmisions and global warming, which led to legislation being put in place to help mitigate it. That continues to be a great example of putting computing to good use for the benefit of humans, and the world we live in. In the graph above you can see how much better cars' mpg became especially during this time when legislation was coming out for emissions.*
